@@ -6,7 +6,7 @@ Permette l'interazione con il sistema tramite Telegram.
 import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from physio_concierge_demo import rag_pipeline_demo
 
 # Abilita il logging
@@ -33,12 +33,23 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = rag_pipeline_demo(user_input)
     await update.message.reply_text(f"Risultato AI: {response}")
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestisci le query testuali dell'utente."""
+    user_input = update.message.text
+    if not user_input:
+        return
+
+    await update.message.reply_text("Sto elaborando la tua richiesta, attendi un momento...")
+    response = rag_pipeline_demo(user_input)
+    await update.message.reply_text(f"Risultato AI: {response}")
+
 # Configura il bot
 def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("search", search))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     application.run_polling()
 
