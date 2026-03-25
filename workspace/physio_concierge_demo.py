@@ -3,34 +3,33 @@ Demo Funzionante per "Physio-Concierge" utilizzando il modello locale Qwen3.5
 """
 
 import chromadb
+import os
 from chromadb.config import Settings
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
 import subprocess
+import google.generativeai as genai
 
-import requests
-import json
-
-# Configurazione Ollama (Host accessibile dal container)
-OLLAMA_URL = "http://172.17.0.1:11434/api/generate"
-OLLAMA_MODEL = "qwen3.5:9b"
+# Configurazione Gemini API
+GEMINI_API_KEY = "AIzaSyBMiPl3DpLn_qR3hZc4QDsZXW_kej48LIY"
+genai.configure(api_key=GEMINI_API_KEY)
 
 def run_local_model(prompt):
-    """Esegue il modello tramite Ollama API."""
+    """Esegue il modello Gemini tramite libreria ufficiale."""
+    print(f"DEBUG: Inviando richiesta a Gemini (gemini-1.5-flash)...")
     try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False
-        }
-        response = requests.post(OLLAMA_URL, json=payload)
-        response.raise_for_status()
-        return response.json().get("response", "").strip()
+        model = genai.GenerativeModel('gemini-flash-latest')
+        response = model.generate_content(prompt)
+        print(f"DEBUG: Risposta ricevuta da Gemini.")
+        return response.text.strip()
     except Exception as e:
-        return f"Errore nell'esecuzione di Ollama: {str(e)}"
+        print(f"DEBUG: Errore Gemini API: {str(e)}")
+        # Fallback a CLI se la libreria fallisce
+        try:
+            escaped_prompt = prompt.replace('"', '\\"')
+            cmd = f'gemini -p "{escaped_prompt}"'
+            result = subprocess.run(cmd, capture_output=True, shell=True, text=True)
+            return result.stdout.strip()
+        except:
+            return f"Errore nell'esecuzione di Gemini: {str(e)}"
 
 # Dati d'esempio pre-caricati
 fisioterapisti = [
@@ -43,41 +42,80 @@ linee_guida = [
     "Valutare disponibilità del terapista per il trattamento domiciliare."
 ]
 
+# Cache per la collezione Chroma
+_collection_cache = None
+
+# Custom Embedding Function usando Gemini (compatibile con ChromaDB 0.3.x)
+def gemini_embedding_fn(input: list) -> list:
+    try:
+        # Gemini embedding-001
+        result = genai.embed_content(
+            model="models/gemini-embedding-001",
+            content=input,
+            task_type="retrieval_document"
+        )
+        return result['embedding']
+    except Exception as e:
+        print(f"DEBUG: Errore Embedding Gemini: {str(e)}")
+        # Fallback embedding (768 zeri per all-MiniLM-L6-v2 compatible size)
+        return [[0.0] * 768] * len(input)
+
 # Configurazione ChromaDB
 def setup_chroma():
     """Configura ed inizializza il database vettoriale per demo."""
+    global _collection_cache
+    if _collection_cache is not None:
+        return _collection_cache
+
+    os.environ["ANONYMIZED_TELEMETRY"] = "False"
     chroma_client = chromadb.Client(Settings(
         persist_directory="./chroma_demo",
         anonymized_telemetry=False
     ))
-    collection = chroma_client.get_or_create_collection(name="demo_fisioterapisti")
+    
+    # Usa la funzione di embedding di Gemini per evitare il download ONNX
+    collection = chroma_client.get_or_create_collection(
+        name="demo_fisioterapisti",
+        embedding_function=gemini_embedding_fn
+    )
 
-    for fisioterapista in fisioterapisti:
-        testo = f"{fisioterapista['nome']} - {fisioterapista['specializzazione']} - {fisioterapista['zona']}"
-        collection.add(
-            documents=[testo],
-            metadatas=[fisioterapista],
-            ids=[fisioterapista['nome']]
-        )
+    # Aggiungi i dati solo se la collezione è vuota
+    if collection.count() == 0:
+        print("DEBUG: Indicizzazione dati iniziale...")
+        for fisioterapista in fisioterapisti:
+            testo = f"{fisioterapista['nome']} - {fisioterapista['specializzazione']} - {fisioterapista['zona']}"
+            collection.add(
+                documents=[testo],
+                metadatas=[fisioterapista],
+                ids=[fisioterapista['nome']]
+            )
 
-    for i, linea in enumerate(linee_guida):
-        collection.add(documents=[linea], ids=[f"linea-{i}"])
-
+        for i, linea in enumerate(linee_guida):
+            collection.add(documents=[linea], ids=[f"linea-{i}"])
+    
+    _collection_cache = collection
     return collection
 
-# Pipeline con Qwen3.5
+# Pipeline con Gemini
 def rag_pipeline_demo(query):
     """Pipeline demo per il triage fisioterapico."""
     collection = setup_chroma()
+    
+    # Query ChromaDB
     risultati = collection.query(query_texts=[query], n_results=2)
-    # ChromaDB restituisce una lista di liste per 'documents'
-    risultati_testo = "\n".join(risultati['documents'][0])
+    
+    # ChromaDB 0.3.x restituisce una lista di liste per 'documents'
+    if risultati['documents'] and len(risultati['documents']) > 0:
+        risultati_testo = "\n".join(risultati['documents'][0])
+    else:
+        risultati_testo = "Nessuna informazione specifica trovata."
 
     prompt = f"""
     Domanda: {query}
     Informazioni Recuperate: {risultati_testo}
 
     In base ai risultati ottenuti, genera una risposta dettagliata ma concisa per il paziente.
+    Rispondi in modo professionale come un assistente di triage fisioterapico.
     """
 
     return run_local_model(prompt)

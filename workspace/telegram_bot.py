@@ -40,8 +40,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text("Sto elaborando la tua richiesta, attendi un momento...")
-    response = rag_pipeline_demo(user_input)
-    await update.message.reply_text(f"Risultato AI: {response}")
+    try:
+        response = rag_pipeline_demo(user_input)
+        await update.message.reply_text(f"Risultato AI: {response}")
+    except Exception as e:
+        error_msg = f"Spiacente, si è verificato un errore durante l'elaborazione: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        await update.message.reply_text(error_msg)
 
 # Configura il bot
 def main():
