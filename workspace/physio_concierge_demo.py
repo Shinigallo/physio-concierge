@@ -60,7 +60,8 @@ def gemini_embedding_fn(input: list) -> list:
     except Exception as e:
         print(f"DEBUG: Errore Embedding Gemini: {str(e)}")
         # Fallback embedding (768 zeri per all-MiniLM-L6-v2 compatible size)
-        return [[0.0] * 768] * len(input)
+        result = subprocess.run(['ollama', 'run', 'qwen2.5:7b', '--embedding', json.dumps(input)], capture_output=True, text=True).stdout
+        return json.loads(result)
 
 # Configurazione ChromaDB
 def setup_chroma():
