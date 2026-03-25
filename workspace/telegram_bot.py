@@ -16,7 +16,9 @@ logging.basicConfig(
 )
 
 # Token Bot (da configurare come variabile d'ambiente)
-TELEGRAM_TOKEN = "8655617958:AAGWO4Nogj1RuFjEs2DJ6iT0fgfofG3MJMI"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TELEGRAM_TOKEN:
+    raise ValueError("TELEGRAM_TOKEN non è impostata nelle variabili d'ambiente.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start."""

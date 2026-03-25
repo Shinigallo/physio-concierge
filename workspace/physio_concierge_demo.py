@@ -8,8 +8,10 @@ from chromadb.config import Settings
 import subprocess
 import google.generativeai as genai
 
-# Configurazione Gemini API
-GEMINI_API_KEY = "AIzaSyBMiPl3DpLn_qR3hZc4QDsZXW_kej48LIY"
+# Configurazione Gemini API tramite variabile d'ambiente
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY non è impostata nelle variabili d'ambiente.")
 genai.configure(api_key=GEMINI_API_KEY)
 
 def run_local_model(prompt):
